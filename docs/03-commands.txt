@@ -1,0 +1,222 @@
+========================================
+Команди CLI для freelance-project-finder
+========================================
+
+Проєкт складається з двох основних етапів:
+
+1) Етап 1 — збір і оцінка проєктів з Freelancehunt:
+   - скрипт: index.cjs
+
+2) Етап 2 — підготовка чернеток відповідей + оцінка годин/вартості:
+   - скрипт: prepare-responses.cjs
+
+
+----------------------------
+1. Етап 1: index.cjs
+----------------------------
+
+Базові команди
+--------------
+
+1) Звичайний запуск (аналізувати тільки нові, яких ще не було в seen-projects.json):
+
+    node index.cjs
+
+2) Повний запуск (ігнорувати seen-projects.json, подивитись усі актуальні проєкти):
+
+    node index.cjs --full
+
+
+Що робить index.cjs
+--------------------
+
+- Тягне проєкти з Freelancehunt API (до MAX_PROJECTS_TO_LOAD, за замовчуванням 400).
+- Префільтрує їх по:
+  - статусу (лише ті, що приймають ставки),
+  - бюджету (MIN_BUDGET_UAH або без бюджету),
+  - ключових словах (Google Ads, GA4/GTM, Merchant Center, Shopping, PMax, SEO, CRM, email, B2B тощо).
+- Відправляє релевантні в OpenAI для оцінки fit/score/category/reason.
+- Підсилює Merchant Center / Shopping / PMax, занижує менеджерські ролі.
+- Сортує за пріоритетом.
+- Зберігає:
+  - повний список у `results-YYYY-MM-DDTHH-MM-SSZ.json`,
+  - тільки рекомендовані (fit=true) у `results-recommended-YYYY-MM-DDTHH-MM-SSZ.json`.
+- Оновлює `seen-projects.json` (всі проаналізовані id додаються в історію).
+
+
+----------------------------
+2. Етап 2: prepare-responses.cjs
+----------------------------
+
+Базовий запуск
+--------------
+
+Найпростіший варіант: взяти останній `results-recommended-*.json`,
+застосувати дефолтні фільтри з .env (якщо є) і підготувати чернетки:
+
+    node prepare-responses.cjs
+
+
+Опції CLI
+---------
+
+Синтаксис:
+
+    node prepare-responses.cjs [опції]
+
+Доступні прапори:
+
+1) --file
+
+   Який файл з рекомендованими проєктами читати як вхід.
+
+   - Якщо НЕ вказано:
+     - автоматично береться останній за датою файл:
+       `results-recommended-*.json`.
+
+   Приклади:
+
+     node prepare-responses.cjs --file=results-recommended-2025-11-29T17-00-00Z.json
+     node prepare-responses.cjs --file results-recommended-2025-11-29T17-00-00Z.json
+
+
+2) --top
+
+   Скільки перших проєктів брати після фільтрації.
+
+   - Якщо `--ids` НЕ задано:
+     - використовується це значення АБО,
+     - якщо не передано, береться `TOP_STAGE2` з .env (або 5 за замовчуванням).
+   - Якщо `--ids` задано — `--top` ігнорується.
+
+   Приклади:
+
+     node prepare-responses.cjs --top=3
+     node prepare-responses.cjs --top 10
+
+
+3) --ids
+
+   Явно вказати, для яких id проєктів готувати відповіді.
+   Список через кому.
+
+   - Якщо задано `--ids`:
+     - `--top`, `TOP_STAGE2` з .env не застосовуються.
+
+   Приклади:
+
+     node prepare-responses.cjs --ids=12345,67890
+     node prepare-responses.cjs --ids 12345,67890
+
+
+4) --domain
+
+   Перекриває значення `DOMAIN_STAGE2` з .env.
+
+   Фільтр за доменною категорією (поле `domainCategory` з Етапу 1).
+
+   Доступні значення:
+
+   - ads          — реклама (Google Ads, PMax, Shopping, Meta, TikTok);
+   - analytics    — GA4, GTM, tracking, звіти;
+   - crm_email    — CRM, email-маркетинг, автоворонки;
+   - seo          — SEO / контент під SEO;
+   - dev_site     — сайти / лендінги / інтернет-магазини під ключ;
+   - management   — маркетинг-менеджер, lead generation manager тощо;
+   - content_low  — картки товарів, рутинний контент;
+   - other        — інші задачі.
+
+   Приклади:
+
+     node prepare-responses.cjs --domain=ads,analytics
+     node prepare-responses.cjs --domain crm_email,seo
+
+   Якщо `--domain` не вказано:
+   - береться `DOMAIN_STAGE2` з .env (якщо є),
+   - якщо його немає — фільтр за domainCategory не застосовується.
+
+
+5) --workload
+
+   Перекриває значення `WORKLOAD_STAGE2` з .env.
+
+   Фільтр по обсягу роботи (поле `workload` з Етапу 1):
+
+   - tiny   — 1–2 год
+   - small  — ~2–8 год
+   - medium — ~8–20 год
+   - large  — >20 год
+   - xl     — дуже великі / довготривалі задачі
+
+   Приклади:
+
+     node prepare-responses.cjs --workload=tiny,small
+     node prepare-responses.cjs --workload medium,large
+
+   Якщо `--workload` не вказано:
+   - береться `WORKLOAD_STAGE2` з .env (якщо є),
+   - якщо його немає — фільтр по workload не застосовується.
+
+
+6) --batch-size
+
+   Розмір партії проєктів для одного виклику моделі.
+
+   - Якщо не вказано:
+     - використовується `BATCH_SIZE_STAGE2` з .env (або 3 за замовчуванням).
+
+   Приклади:
+
+     node prepare-responses.cjs --batch-size=2
+     node prepare-responses.cjs --batch-size 5
+
+
+Приклади комбінованих запусків
+------------------------------
+
+1) Взяти останні рекомендовані, домени "ads" + "analytics",
+   маленькі задачі (tiny/small), максимум 3 проєкти:
+
+    node prepare-responses.cjs --domain=ads,analytics --workload=tiny,small --top=3
+
+2) Підготувати відповіді тільки для конкретних id:
+
+    node prepare-responses.cjs --ids=12345,67890
+
+3) Використати дефолтні фільтри з .env:
+
+   У .env:
+
+     DOMAIN_STAGE2=ads,analytics
+     WORKLOAD_STAGE2=tiny,small
+     TOP_STAGE2=5
+     BATCH_SIZE_STAGE2=3
+
+   Запуск:
+
+     node prepare-responses.cjs
+
+   Результат:
+   - буде взято останній results-recommended-*.json,
+   - проєкти відфільтровані по domainCategory ∈ {ads, analytics},
+   - workload ∈ {tiny, small},
+   - максимум 5 штук,
+   - відправлені в GPT батчами по 3.
+
+
+----------------------------
+3. Результати Етапу 2
+----------------------------
+
+Після запуску `prepare-responses.cjs` створюється файл:
+
+    proposals-YYYY-MM-DDTHH-MM-SSZ.json
+
+У ньому по кожному проєкту:
+
+- готова чернетка відгуку (`proposal`), яку можна скопіювати на Freelancehunt;
+- оцінка годин та вартості для України (`estimate.hoursMin`, `hoursMax`, `totalMinUAH`, `totalMaxUAH`);
+- перерахунок вартості для Європа/США (`*_EUUS`) через `EU_US_PRICE_MULTIPLIER` (дефолт 1.5).
+
+Це основний файл для твоєї ручної роботи: вибираєш проєкти, трохи правиш текст, підставляєш ціну — і відправляєш відгуки.
+

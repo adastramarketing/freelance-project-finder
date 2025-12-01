@@ -1,7 +1,8 @@
-// index.js
+// index.cjs
 // Автовідбір проєктів з Freelancehunt для маркетолога
 // Підсилені Merchant Center / Shopping, знижений пріоритет менеджерських ролей,
-// збереження повного результату у JSON (відсортовано за пріоритетом).
+// збереження повного результату у JSON (відсортовано за пріоритетом) +
+// окремий JSON із рекомендованими (fit=true) + доменні категорії та workload.
 
 require('dotenv').config();
 const fs = require('fs');
@@ -16,7 +17,8 @@ const FH_TOKEN =
   '';
 
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY || '';
-const OPENAI_MODEL = process.env.OPENAI_MODEL || 'gpt-4o-mini';
+// модель для етапу 1 (дешевша); за замовчуванням можна ставити що завгодно й перекрити через .env
+const OPENAI_MODEL = process.env.OPENAI_MODEL || 'gpt-5-mini';
 
 // скільки максимум проєктів тягнемо з Freelancehunt за один запуск
 const MAX_PROJECTS_TO_LOAD = Number(process.env.MAX_PROJECTS_TO_LOAD || 400);
@@ -113,42 +115,170 @@ function truncate(str, max = 900) {
   return str.slice(0, max) + '…';
 }
 
+// ==== КЛЮЧОВІ СЛОВА ====
+
 const HIGH_PRIORITY_KEYWORDS = [
-  'google ads',
-  'google реклама',
-  'контекстная реклама',
+  // General performance / digital marketing
+  'digital маркетинг',
+  'діджитал маркетинг',
+  'digital marketing',
+  'performance marketing',
+  'performance-маркетинг',
+  'інтернет-маркетинг',
+  'интернет маркетинг',
+  'online marketing',
+  'маркетингова стратегія',
+  'маркетинговая стратегия',
   'контекстна реклама',
-  'ga4',
-  'google analytics',
-  'gtm',
-  'tag manager',
-  'merchant center',
+  'контекстная реклама',
+  'онлайн реклама',
+  'реклама в інтернеті',
+  'реклама в интернете',
+  'налаштувати рекламу',
+  'настроить рекламу',
+  'настройка рекламы',
+  'запуск реклами',
+  'запуск рекламы',
+  'рекламні кампанії',
+  'рекламные кампании',
+  'ppc',
+  'sem',
+
+  // Google Ads / Shopping / PMax
+  'google ads',
+  'google adwords',
+  'google реклама',
+  'гугл реклама',
+  'реклама в google',
+  'search ads',
+  'google search',
   'google shopping',
-  'shopping',
+  'shopping ads',
+  'merchant center',
+  'google merchant center',
   'performance max',
   'pmax',
-  'server-side',
-  'capi',
-  'meta ads',
-  'facebook ads',
-  'instagram ads',
-  'tiktok ads',
+  'smart shopping',
+  'динамічний ремаркетинг',
+  'динамический ремаркетинг',
+  'dynamic remarketing',
+  'ремаркетинг',
+  'ретаргетинг',
+  'product feed',
+  'product feeds',
+
+  // Analytics / tracking / GA4 / GTM
+  'ga4',
+  'google analytics 4',
+  'google analytics',
+  'universal analytics',
+  'gtm',
+  'google tag manager',
+  'tag manager',
+  'data layer',
+  'datalayer',
+  'web-аналітика',
+  'веб аналітика',
+  'веб аналитика',
+  'web analytics',
+  'аналітика сайту',
+  'аналитика сайта',
+  'events tracking',
+  'conversion tracking',
+  'конверсії',
+  'конверсии',
+  'налаштування подій',
+  'настройка событий',
+  'server-side tracking',
+  'server side tracking',
+  'server-side tagging',
+  'offline conversions',
+  'offline-конверсії',
+  'utm-мітки',
+  'utm метки',
+  'utm разметка',
+  'bigquery',
+  'looker studio',
+  'datastudio',
+  'data studio',
+
+  // E-commerce / платформи
+  'інтернет-магазин',
+  'интернет магазин',
+  'online store',
+  'ecommerce',
+  'e-commerce',
+  'shopify',
+  'магазин shopify',
+  'woocommerce',
+  'woo commerce',
+  'opencart',
+  'open cart',
+  'magento',
+  'prestashop',
+  'presta shop',
+  'cs-cart',
+  'bigcommerce',
+  'prom.ua',
+
+  // Email / CRM / funnels
+  'email-маркетинг',
   'email маркетинг',
   'email marketing',
+  'email рассылка',
+  'e-mail рассылка',
+  'email розсилка',
+  'розсилка',
+  'розсилки',
+  'рассылки',
+  'newsletter',
+  'klaviyo',
+  'mailchimp',
   'sendpulse',
-  'kommo',
-  'amocrm',
+  'omnisend',
+  'smtp',
   'crm',
+  'amo crm',
+  'amocrm',
+  'bitrix24',
   'hubspot',
-  'лідогенерац',
-  'lead generation',
+  'pipedrive',
+  'salesforce',
+  'автоворонка',
+  'воронка продаж',
+  'воронка продажів',
+  'sales funnel',
+  'lead nurturing',
+
+  // B2B / leadgen
   'b2b',
-  'seo',
-  'search engine optimization',
-  'shopify',
-  'woocommerce',
-  'opencart',
-  'wordpress',
+  'b2b marketing',
+  'b2b leadgen',
+  'b2b lead gen',
+  'лідогенерація',
+  'лидогенерация',
+  'lead generation',
+  'b2b sales',
+  'appointment setting',
+
+  // Social ads (додатковий профіль)
+  'facebook ads',
+  'meta ads',
+  'instagram ads',
+  'tiktok ads',
+  'linkedin ads',
+  'реклама в facebook',
+  'реклама в instagram',
+  'реклама в tiktok',
+  'реклама в linkedin',
+  'реклама в соцмережах',
+  'реклама в соцсетях',
+  'таргетована реклама',
+  'таргетированная реклама',
+  'paid social',
+  'ads manager',
+  'рекламний кабінет',
+  'рекламный кабинет',
 ];
 
 const LOW_PRIORITY_EXCLUDE_KEYWORDS = [
@@ -276,7 +406,7 @@ function prefilterProjects(allProjects) {
     // якщо суто "заповнення карток" (але ти хочеш їх бачити як низький пріоритет) —
     // пропускаємо, але AI вже поставить низький score
     const isPureContent =
-      /карток товарів|карток товарів|карточек товаров|наполнен/i.test(text) &&
+      /карток товарів|картки товарів|карточек товаров|наполнен/i.test(text) &&
       !/google|ads|merchant|shopping|seo|ga4|gtm|crm|email/i.test(text);
 
     // виключити дуже нецільові
@@ -332,10 +462,28 @@ async function evaluateBatchWithAI(projectsBatch) {
 
   const userPrompt =
     'Проаналізуй наступні проєкти. Для КОЖНОГО поверни обʼєкт JSON з полями:' +
-    ' id (рядок, той самий id), fit (true/false), score (ціле 1..10),' +
+    ' id (рядок, той самий id),' +
+    ' fit (true/false),' +
+    ' score (ціле 1..10),' +
     ' category (одне з: "core_paid", "core_noprice", "site_full", "managerial", "low_priority_cards", "other"),' +
+    ' domainCategory (одне з: "ads", "analytics", "crm_email", "seo", "dev_site", "management", "content_low", "other"),' +
+    ' workload (одне з: "tiny", "small", "medium", "large"),' +
     ' reason (коротке пояснення українською).' +
     '\n\n' +
+    'Пояснення полів:\n' +
+    '- domainCategory="ads" — задачі по рекламі (Google Ads, PMax, Shopping, Meta/TikTok Ads та інший платний трафік).\n' +
+    '- domainCategory="analytics" — GA4, GTM, події, DataLayer, звітність, server-side, BigQuery/Looker Studio.\n' +
+    '- domainCategory="crm_email" — email-розсилки, CRM, автоворонки, лід-менеджмент.\n' +
+    '- domainCategory="seo" — SEO-оптимізація сайту/контенту.\n' +
+    '- domainCategory="dev_site" — розробка/правки сайтів, верстка, технічні правки без акценту саме на рекламі.\n' +
+    '- domainCategory="management" — менеджерські/leadgen-ролі, коли основне — управління процесом/командою.\n' +
+    '- domainCategory="content_low" — наповнення карток, рутинний контент без стратегії.\n' +
+    '- domainCategory="other" — усе, що не вписується вище.\n\n' +
+    'workload описує обсяг задачі:\n' +
+    '- "tiny" — до 2 годин (консультація, дрібна правка).\n' +
+    '- "small" — ~2–8 годин.\n' +
+    '- "medium" — ~8–20 годин.\n' +
+    '- "large" — >20 годин.\n\n' +
     'Правила ранжування:\n' +
     '1) score 9–10, category "core_*" — ключові задачі: Google Ads, Merchant Center/Shopping, Performance Max/PMax, GA4/GTM, SEO для e-commerce, CRM/автоворонки, email-маркетинг, B2B digital.\n' +
     '   Особливо підсилюй Merchant Center / Shopping / PMax.\n' +
@@ -344,17 +492,18 @@ async function evaluateBatchWithAI(projectsBatch) {
     '4) category "low_priority_cards" — наповнення/редагування карток товарів.\n' +
     '5) Все, що не про маркетинг/аналітику — fit=false, score 1–4, category "other".\n\n' +
     'Виведи ЧИСТИЙ JSON-масив без пояснень, наприклад:\n' +
-    '[{"id":"123","fit":true,"score":9,"category":"core_paid","reason":"..."}, ...]\n\n' +
+    '[{"id":"123","fit":true,"score":9,"category":"core_paid","domainCategory":"ads","workload":"small","reason":"..."}, ...]\n\n' +
     userLines;
 
-  const resp = await openai.chat.completions.create({
-    model: OPENAI_MODEL,
-    temperature: 0.2,
-    messages: [
-      { role: 'system', content: systemPrompt },
-      { role: 'user', content: userPrompt },
-    ],
-  });
+const resp = await openai.chat.completions.create({
+  model: OPENAI_MODEL,
+  // temperature не задаємо — деякі моделі GPT-5 підтримують тільки дефолт
+  messages: [
+    { role: 'system', content: systemPrompt },
+    { role: 'user', content: userPrompt },
+  ],
+});
+
 
   const text = resp.choices[0].message.content.trim();
 
@@ -415,6 +564,16 @@ function applyManualPriorityTuning(project, evalItem) {
   else if (isSiteFull && category === 'other') category = 'site_full';
   else if (isManagerial) category = 'managerial';
 
+  // domainCategory та workload беремо з моделі, але трошки підправляємо за потреби
+  let domainCategory = evalItem.domainCategory || null;
+  if (!domainCategory) {
+    if (isMerchant) domainCategory = 'ads';
+    else if (isSiteFull) domainCategory = 'dev_site';
+    else if (isManagerial) domainCategory = 'management';
+  }
+
+  const workload = evalItem.workload || null;
+
   return {
     ...evalItem,
     score,
@@ -422,6 +581,8 @@ function applyManualPriorityTuning(project, evalItem) {
     isMerchant,
     isManagerial,
     category,
+    domainCategory,
+    workload,
   };
 }
 
@@ -446,7 +607,7 @@ async function main() {
     `Режим: ${FULL_MODE ? 'FULL (ігноруємо seen при відборі)' : 'NORMAL (фільтруємо вже бачені id)'}`,
   );
   console.log(
-    `Параметри: MAX_PROJECTS_TO_LOAD=${MAX_PROJECTS_TO_LOAD}, MIN_BUDGET_UAH=${MIN_BUDGET_UAH}`,
+    `Параметри: MAX_PROJECTS_TO_LOAD=${MAX_PROJECTS_TO_LOAD}, MIN_BUDGET_UAH=${MIN_BUDGET_UAH}, MODEL=${OPENAI_MODEL}`,
   );
 
   const allProjects = await fetchFreelancehuntProjects(MAX_PROJECTS_TO_LOAD);
@@ -496,6 +657,7 @@ async function main() {
       const record = {
         id: project.id,
         title: project.title,
+        description: project.description,
         url: project.url,
         budgetStr: project.budget.raw,
         budgetUAH: project.budget.uah,
@@ -503,6 +665,8 @@ async function main() {
         score: Number(r.score || 0),
         finalScore: Number(tuned.finalScore || tuned.score || 0),
         category: tuned.category || 'other',
+        domainCategory: tuned.domainCategory || null,
+        workload: tuned.workload || null,
         reason: tuned.reason || '',
         isMerchant: tuned.isMerchant,
         isManagerial: tuned.isManagerial,
@@ -516,15 +680,27 @@ async function main() {
   projectsForAI.forEach((p) => seen.add(p.id));
   saveSeen(seen);
 
-  // === 4.2. Сортуємо та зберігаємо повний результат ===
+  // === 4.2. Сортуємо та зберігаємо результати ===
 
   evaluatedRecords.sort(sortByPriority);
 
-  const outFile = path.join(
+  const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+
+  // повний файл з усіма проєктами
+  const outFileAll = path.join(
     __dirname,
-    `results-${new Date().toISOString().replace(/[:.]/g, '-')}.json`,
+    `results-${timestamp}.json`,
   );
-  fs.writeFileSync(outFile, JSON.stringify(evaluatedRecords, null, 2), 'utf8');
+
+  // окремий файл тільки з тими, що підходять (fit=true)
+  const recommendedRecords = evaluatedRecords.filter((r) => r.fit);
+  const outFileRecommended = path.join(
+    __dirname,
+    `results-recommended-${timestamp}.json`,
+  );
+
+  fs.writeFileSync(outFileAll, JSON.stringify(evaluatedRecords, null, 2), 'utf8');
+  fs.writeFileSync(outFileRecommended, JSON.stringify(recommendedRecords, null, 2), 'utf8');
 
   // === 4.3. Розкладаємо по групах для красивого виводу ===
 
@@ -574,6 +750,9 @@ async function main() {
         r.isMerchant ? ' [Merchant/Shopping ↑]' : r.isManagerial ? ' [Manager role ↓]' : ''
       }`,
     );
+    console.log(
+      `Категорія: ${r.category} | Домен: ${r.domainCategory || '-'} | Обсяг: ${r.workload || '-'}`,
+    );
     console.log(`Назва: ${r.title}`);
     console.log(`Бюджет: ${r.budgetStr}`);
     console.log(`Посилання: ${r.url}`);
@@ -585,6 +764,9 @@ async function main() {
     console.log('\n=== РЕКОМЕНДОВАНІ ПРОЄКТИ З БЮДЖЕТОМ (основний пріоритет) ===\n');
     recommendedWithBudget.forEach((r) => {
       console.log(`[${r.finalScore}/10] ✅ ID: ${r.id}`);
+      console.log(
+        `Домен: ${r.domainCategory || '-'} | Workload: ${r.workload || '-'}`,
+      );
       console.log(`Назва: ${r.title}`);
       console.log(`Бюджет: ${r.budgetStr}`);
       console.log(`Посилання: ${r.url}`);
@@ -599,6 +781,9 @@ async function main() {
     );
     recommendedNoBudget.forEach((r) => {
       console.log(`[${r.finalScore}/10] ✅ ID: ${r.id}`);
+      console.log(
+        `Домен: ${r.domainCategory || '-'} | Workload: ${r.workload || '-'}`,
+      );
       console.log(`Назва: ${r.title}`);
       console.log(`Бюджет: ${r.budgetStr}`);
       console.log(`Посилання: ${r.url}`);
@@ -613,6 +798,9 @@ async function main() {
     );
     sitesFull.forEach((r) => {
       console.log(`[${r.finalScore}/10] 🧩 ID: ${r.id}`);
+      console.log(
+        `Домен: ${r.domainCategory || '-'} | Workload: ${r.workload || '-'}`,
+      );
       console.log(`Назва: ${r.title}`);
       console.log(`Бюджет: ${r.budgetStr}`);
       console.log(`Посилання: ${r.url}`);
@@ -627,6 +815,9 @@ async function main() {
     );
     lowPriorityCards.forEach((r) => {
       console.log(`[${r.finalScore}/10] ⚠️ ID: ${r.id}`);
+      console.log(
+        `Домен: ${r.domainCategory || '-'} | Workload: ${r.workload || '-'}`,
+      );
       console.log(`Назва: ${r.title}`);
       console.log(`Бюджет: ${r.budgetStr}`);
       console.log(`Посилання: ${r.url}`);
@@ -637,7 +828,12 @@ async function main() {
 
   console.log(
     `\nРезультати (усі проєкти, відсортовані за пріоритетом) збережено у файлі: ${path.basename(
-      outFile,
+      outFileAll,
+    )}`,
+  );
+  console.log(
+    `Рекомендовані проєкти (fit=true) збережено у файлі: ${path.basename(
+      outFileRecommended,
     )}`,
   );
 }

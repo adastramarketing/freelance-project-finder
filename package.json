@@ -1,23 +1,37 @@
 {
   "name": "freelance-project-finder",
   "version": "1.0.0",
-  "description": "",
-  "main": "index.js",
+  "description": "CLI-асистент для автоматичного пошуку, відбору та підготовки відповідей на проєкти Freelancehunt для digital-маркетолога.",
+  "main": "index.cjs",
+  "type": "commonjs",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "start": "node index.cjs",
+    "scan": "node index.cjs",
+    "scan:full": "node index.cjs --full",
+    "prepare": "node prepare-responses.cjs",
+    "prepare:ads": "node prepare-responses.cjs --domain ads,analytics",
+    "prepare:top5": "node prepare-responses.cjs --top 5",
+    "test": "echo \"No tests specified\" && exit 0"
   },
   "repository": {
     "type": "git",
     "url": "git+https://github.com/adastramarketing/freelance-project-finder.git"
   },
-  "keywords": [],
-  "author": "",
+  "keywords": [
+    "freelancehunt",
+    "cli",
+    "openai",
+    "google-ads",
+    "marketing",
+    "ga4",
+    "merchant-center"
+  ],
+  "author": "Anastasiia",
   "license": "ISC",
   "bugs": {
     "url": "https://github.com/adastramarketing/freelance-project-finder/issues"
   },
   "homepage": "https://github.com/adastramarketing/freelance-project-finder#readme",
-  "type": "module",
   "dependencies": {
     "dotenv": "^17.2.3",
     "node-fetch": "^3.3.2",

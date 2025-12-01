@@ -1,0 +1,299 @@
+========================================
+Документація: prepare-responses.cjs (Етап 2)
+========================================
+
+Коротко
+------
+
+Скрипт `prepare-responses.cjs`:
+
+1) бере результат першого етапу (`results-recommended-*.json`),  
+2) фільтрує рекомендовані проєкти за:
+   - доменною категорією (ads / analytics / crm_email / seo / dev_site / management / content_low / other),
+   - оцінкою обсягу роботи (tiny / small / medium / large / xl),
+   - id проєктів або топ-N,
+3) відправляє вибрані проєкти в GPT-5.1,
+4) отримує:
+   - чернетку відповіді на проєкт (proposal),
+   - оцінку годин і вартості для ринку України (estimate),
+   - автоматично рахує еквівалент для Європи/США (через множник).
+
+Результат зберігається у файлі `proposals-YYYY-MM-DDTHH-MM-SSZ.json`
+і дублюється коротко у консоль.
+
+
+1. Вимоги
+---------
+
+1) Встановлений Node.js (v18+ бажано).
+2) У корені проєкту:
+   - `prepare-responses.cjs`
+   - результати першого етапу: `results-recommended-*.json`
+   - `.env` з налаштуваннями.
+
+3) Встановлені залежності в `package.json`:
+   - openai
+   - dotenv
+
+
+2. Налаштування через .env
+--------------------------
+
+Обов’язкові:
+
+- `OPENAI_API_KEY` — ключ OpenAI.
+- `OPENAI_MODEL_STAGE2` — модель для другого етапу (рекомендовано: `gpt-5.1`).
+
+Ставки:
+
+- `BASE_HOURLY_RATE_UAH` — базова комфортна ставка для UA, грн/год.
+  - дефолт у коді: 800
+- `MIN_HOURLY_RATE_UAH` — мінімальна розумна ставка для UA, грн/год.
+  - дефолт у коді: 500
+
+Множник для Європа/США:
+
+- `EU_US_PRICE_MULTIPLIER`
+  - дефолт: `1.5`
+  - логіка: `сума_в_UA * EU_US_PRICE_MULTIPLIER`
+
+Дефолтні ліміти та фільтри для Етапу 2:
+
+- `TOP_STAGE2`
+  - дефолт: `5`
+  - якщо не переданий `--ids`, скрипт візьме перші TOP_STAGE2 проєктів після фільтрації.
+
+- `BATCH_SIZE_STAGE2`
+  - дефолт: `3`
+  - скільки проєктів відправляти в одну партію до моделі.
+
+- `DOMAIN_STAGE2`
+  - список через кому:
+    - приклад: `ads,analytics,crm_email`
+    - доступні значення:
+      - `ads` — реклама (Google Ads, Meta, PMax, Shopping),
+      - `analytics` — GA4, GTM, tracking, звітність,
+      - `crm_email` — CRM, email-маркетинг, автоворонки,
+      - `seo` — SEO e-commerce / контент під SEO,
+      - `dev_site` — сайти / лендінги / магазини під ключ,
+      - `management` — маркетинг-менеджер, лідогенерація як роль,
+      - `content_low` — наповнення карток, рутинний контент,
+      - `other` — інше.
+
+- `WORKLOAD_STAGE2`
+  - список через кому:
+    - приклад: `tiny,small`
+    - доступні значення:
+      - `tiny` — 1–2 год,
+      - `small` — ~2–8 год,
+      - `medium` — ~8–20 год,
+      - `large` — >20 год,
+      - `xl` — дуже великі задачі / довгий проєкт.
+
+
+3. Вхідні дані
+--------------
+
+Скрипт очікує файл з першого етапу:
+
+- `results-recommended-*.json` — файл, який згенерував `index.cjs`:
+  - це масив об’єктів з полями:
+    - `id`
+    - `title`
+    - `description`
+    - `url`
+    - `category`
+    - `domainCategory`
+    - `workload`
+    - `finalScore`
+    - `fit`
+    - `budgetStr`
+    - `budgetUAH`
+    - `reason`
+    - тощо
+
+
+4. Аргументи CLI (етап 2)
+-------------------------
+
+Базовий запуск:
+
+    node prepare-responses.cjs [опції]
+
+Доступні опції:
+
+1) `--file`  
+   - Який файл читати як вхід.
+   - Якщо НЕ вказано — автоматично береться останній за датою:
+     `results-recommended-*.json`.
+
+   Приклади:
+   - `--file=results-recommended-2025-11-29T17-00-00Z.json`
+   - `--file results-recommended-2025-11-29T17-00-00Z.json`
+
+2) `--top`  
+   - Скільки перших проєктів брати після фільтрації.
+   - Якщо `--ids` НЕ задано:
+     - за замовчуванням: значення з `.env` → `TOP_STAGE2` (або 5, якщо не задано).
+   - Якщо `--ids` задано — `top` ігнорується.
+
+   Приклади:
+   - `--top=3`
+   - `--top 10`
+
+3) `--ids`  
+   - Явно вказати, для яких id проєктів готувати відповіді.
+   - Список через кому.
+   - Якщо задано `--ids` — всі інші ліміти (`--top`, `TOP_STAGE2`) не застосовуються.
+
+   Приклади:
+   - `--ids=12345,67890`
+   - `--ids 12345,67890`
+
+4) `--domain`  
+   - Перекрити значення з `.env` (`DOMAIN_STAGE2`).
+   - Список доменних категорій через кому:
+     - `ads`, `analytics`, `crm_email`, `seo`, `dev_site`, `management`, `content_low`, `other`.
+
+   Приклади:
+   - `--domain=ads,analytics`
+   - `--domain crm_email,seo`
+
+   Якщо `--domain` не вказано:
+   - використовується `DOMAIN_STAGE2` з `.env`, якщо він не порожній,
+   - або доменний фільтр не застосовується (беруться всі domainCategory).
+
+5) `--workload`  
+   - Перекрити значення з `.env` (`WORKLOAD_STAGE2`).
+   - Список категорій обсягу роботи:
+     - `tiny`, `small`, `medium`, `large`, `xl`.
+
+   Приклади:
+   - `--workload=tiny,small`
+   - `--workload medium,large`
+
+   Якщо `--workload` не вказано:
+   - використовується `WORKLOAD_STAGE2` з `.env`, якщо він не порожній,
+   - або фільтр по workload не застосовується.
+
+6) `--batch-size`  
+   - Розмір партії проєктів для одного виклику моделі.
+   - Якщо не вказано:
+     - використовується `BATCH_SIZE_STAGE2` з `.env` (або 3 за замовчуванням).
+
+   Приклади:
+   - `--batch-size=2`
+   - `--batch-size 5`
+
+
+5. Приклади запуску
+--------------------
+
+1) Найпростіший сценарій: взяти останній файл, ТОП-5 (або TOP_STAGE2 із .env):
+
+    node prepare-responses.cjs
+
+2) Тільки рекламі + аналітика, маленькі задачі, максимум 3 проєкти:
+
+    node prepare-responses.cjs --domain=ads,analytics --workload=tiny,small --top=3
+
+3) Жорстко вибрати конкретні проєкти по id:
+
+    node prepare-responses.cjs --ids=12345,67890
+
+4) Задати більший batch size (наприклад 5):
+
+    node prepare-responses.cjs --batch-size=5
+
+5) Використати дефолтні фільтри з `.env` (наприклад):
+
+    DOMAIN_STAGE2=ads,analytics
+    WORKLOAD_STAGE2=tiny,small
+    TOP_STAGE2=5
+    BATCH_SIZE_STAGE2=3
+
+    node prepare-responses.cjs
+
+   — у цьому випадку без параметрів:
+   - візьме останній `results-recommended-*.json`,
+   - відфільтрує тільки `ads` + `analytics`,
+   - тільки `tiny` + `small`,
+   - візьме максимум 5 штук,
+   - відправить їх в модель по 3 за раз.
+
+
+6. Що саме генерує скрипт
+-------------------------
+
+Після запуску створюється файл:
+
+    proposals-YYYY-MM-DDTHH-MM-SSZ.json
+
+Всередині — масив об’єктів такого вигляду:
+
+    {
+      "id": "12345",
+      "title": "Налаштувати Google Ads + GA4",
+      "description": "Оригінальний опис проєкту з Freelancehunt",
+      "url": "https://freelancehunt.com/project/...",
+      "category": "core_paid",
+      "domainCategory": "ads",
+      "workload": "small",
+      "finalScore": 9.5,
+      "budgetStr": "300 USD",
+      "budgetUAH": 12000,
+      "reason": "AI-пояснення з етапу 1",
+      "proposal": "Тут чернетка відгуку, яку ти можеш скопіювати, підправити й вставити на Freelancehunt.",
+      "estimate": {
+        "hoursMin": 6,
+        "hoursMax": 10,
+        "hourlyRateUAH": 800,
+        "totalMinUAH": 4800,
+        "totalMaxUAH": 8000,
+        "hourlyRateUAH_EUUS": 1200,
+        "totalMinUAH_EUUS": 7200,
+        "totalMaxUAH_EUUS": 12000,
+        "phases": [
+          { "name": "Аналіз акаунту та стратегії", "hours": 2 },
+          { "name": "Налаштування GA4/GTM + конверсій", "hours": 2 },
+          { "name": "Налаштування кампаній Google Ads", "hours": 2 },
+          { "name": "Оптимізація і звітність", "hours": 2 }
+        ]
+      }
+    }
+
+- `proposal` — готовий текст відгуку (ukr/ru/en — залежно від мови проєкту).
+- `estimate` — деталізація годин і вартості:
+  - для України,
+  - перерахунок для Європа/США через `EU_US_PRICE_MULTIPLIER`.
+
+
+7. Типовий воркфлоу
+--------------------
+
+1) Запустити етап 1:
+
+   - `node index.cjs`
+   - подивитись, які проєкти рекомендовані (fit=true).
+
+2) Відкрити потрібний `results-recommended-*.json`, прикинути, які домени/обсяги цікаві.
+
+3) Налаштувати `.env` для етапу 2:
+   - `OPENAI_MODEL_STAGE2=gpt-5.1`
+   - `BASE_HOURLY_RATE_UAH`, `MIN_HOURLY_RATE_UAH`
+   - `EU_US_PRICE_MULTIPLIER=1.5`
+   - `DOMAIN_STAGE2`, `WORKLOAD_STAGE2`, `TOP_STAGE2`, `BATCH_SIZE_STAGE2`
+     — як дефолтні фільтри.
+
+4) Запустити:
+
+   - `node prepare-responses.cjs`
+   - або з додатковими прапорами `--domain`, `--workload`, `--top`, `--ids`, `--batch-size`, якщо треба перебити дефолти з `.env`.
+
+5) Відкрити `proposals-*.json`, взяти звідти:
+   - `proposal` → як основу для відгуку,
+   - `estimate` → як орієнтир по годинах/вартості.
+
+--------------------------------
+Кінець документа `prepare-responses-usage.txt`
+--------------------------------
